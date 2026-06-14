@@ -8,12 +8,8 @@ build/
 # Simulation output
 results/
 
-# Local-only (same as bunker-simulation .git/info/exclude)
-AGENTS.md
-muonsBunker/PIPELINE_ANALYSIS.md
 scripts/
 
-# Alternate configs / dev macros (not in upstream bunker-simulation git)
 muonsBunker/cubeInfo2.txt
 muonsBunker/inputMuons2.ini
 muonsBunker/quickRun.mac
