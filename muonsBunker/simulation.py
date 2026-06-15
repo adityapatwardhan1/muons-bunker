@@ -564,6 +564,7 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
         self.height = topZ - bottomZ
         self.detectorNo = detectorNo
         self.topZ = topZ
+        self.bottomZ = bottomZ
         self.addNoise = noise
 
     def ProcessHits(self,step, ROhist):
@@ -596,8 +597,10 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
                     approxFirstTrajectory = subtract(closestApproach, firstHitPosPre)
                     approxSecondTrajectory = subtract(posPostTuple, closestApproach)
                     scatteringAngle = angleBetween(approxFirstTrajectory, approxSecondTrajectory)
-                    # Remove outliers, many outliers are near the top of the detector, good hits are closer to the material than the top of the detector
-                    if 1.5 < scatteringAngle < 30 and self.topZ - closestApproach[2] > self.height / 10:
+                    # Remove outliers near top/bottom plates; keep PoCA z inside symmetric band
+                    margin = self.height / 10
+                    if (1.5 < scatteringAngle < 30
+                            and self.bottomZ + margin < closestApproach[2] < self.topZ - margin):
                         aMan = G4AnalysisManager.Instance()
                         aMan.FillNtupleIColumn(0, self.detectorNo)
                         aMan.FillNtupleDColumn(1, closestApproach[0])
