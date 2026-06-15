@@ -1,0 +1,31 @@
+{
+  "run": { "method": 2 },
+  "detector": {
+    "side": 1.0,
+    "topZ": 0.8,
+    "bottomZ": 0.0
+  },
+  "source": {
+    "geometry": "halfSphere",
+    "autoAlign": true,
+    "centerX": 0.0,
+    "centerY": 0.0,
+    "centerZ": 1.0,
+    "radius": 0.06
+  },
+  "objects": [
+    {
+      "name": "pu_core",
+      "pX": 0.0,
+      "pY": 0.0,
+      "pZ": 0.4,
+      "shape": "box",
+      "halfSide": 0.06,
+      "mat": "Pu"
+    }
+  ],
+  "output": {
+    "pathname": "../results/",
+    "foldername": "testFolder"
+  }
+}

@@ -1,6 +1,9 @@
 from geant4_pybind import *
+import argparse
+import copy
 import csv
 import configparser
+import json
 import os
 import datetime
 import calendar
@@ -9,6 +12,7 @@ import random
 import math
 from pyEcoMug import EcoMug
 from util_math_functions import *
+from scene_config import load_scene
 
 
 class ActionInitialization(G4VUserActionInitialization):
@@ -32,11 +36,21 @@ class ActionInitialization(G4VUserActionInitialization):
 
 class DetectorConstruction(G4VUserDetectorConstruction):
     
-    def __init__(self, useCubeFile=False, cubeFileName="cubeInfo.txt"):
+    def __init__(self, scene=None, useCubeFile=False, cubeFileName="cubeInfo.txt"):
         super().__init__()
         self.detLog = None
+        self.scene = scene
         self.useCubeFile = useCubeFile
         self.cubeFileName = cubeFileName # The corresponding file defines the properties of the cube in the scene
+        if scene:
+            det = scene.get("detector", {})
+            self.detSide = float(det.get("side", 1.0))
+            self.topZ = float(det.get("topZ", 0.8))
+            self.bottomZ = float(det.get("bottomZ", 0.0))
+        else:
+            self.detSide = 1.0
+            self.topZ = 0.8
+            self.bottomZ = 0.0
         
     def Construct(self):
         man = G4NistManager.Instance()
@@ -205,14 +219,14 @@ class DetectorConstruction(G4VUserDetectorConstruction):
         
         #----------------------------DETECTOR------------------------------#
         detMaterial = man.FindOrBuildMaterial("G4_PLASTIC_SC_VINYLTOLUENE")
-        detSide   = 1*m       
+        detSide   = self.detSide*m       
         detHeight = 2.5*mm      
         detSolid = G4Box("detSolid",detSide, detSide,detHeight)
         self.detLog = G4LogicalVolume(detSolid, detMaterial, "detLog")
 
         # Detector placements
         detLowerOut = G4PVPlacement(None,
-                                    G4ThreeVector(0.0,0.0,-0.0*m), 
+                                    G4ThreeVector(0.0,0.0,self.bottomZ*m), 
                                     self.detLog,
                                          "Lower Detector Out",
                                     logicWorld,
@@ -220,7 +234,7 @@ class DetectorConstruction(G4VUserDetectorConstruction):
                                     3,
                                     checkOverlaps)
         detLowerIn = G4PVPlacement(None,
-                                    G4ThreeVector(0.0,0.0,-0.0*m+2*detHeight),
+                                    G4ThreeVector(0.0,0.0,self.bottomZ*m+2*detHeight),
                                     self.detLog,
                                         "Lower Detector In",
                                     logicWorld,
@@ -228,7 +242,7 @@ class DetectorConstruction(G4VUserDetectorConstruction):
                                     2,
                                     checkOverlaps)
         detUpperOut = G4PVPlacement(None,
-                                    G4ThreeVector(0.0,0.0,0.8*m-2*detHeight),
+                                    G4ThreeVector(0.0,0.0,self.topZ*m-2*detHeight),
                                     self.detLog,
                                          "Upper Detector Out",
                                     logicWorld,
@@ -236,8 +250,7 @@ class DetectorConstruction(G4VUserDetectorConstruction):
                                     1,
                                     checkOverlaps)
         detUpperIn = G4PVPlacement(None,
-                                   G4ThreeVector(0.0,0.0,0.8                                              
-*m),
+                                   G4ThreeVector(0.0,0.0,self.topZ*m),
                                     self.detLog,
                                         "Upper Detector In",
                                     logicWorld,
@@ -246,7 +259,34 @@ class DetectorConstruction(G4VUserDetectorConstruction):
                                     checkOverlaps)
         
         #-------------------------Cubes for testing--------------------------#
-        if self.useCubeFile:
+        if self.scene and self.scene.get("objects"):
+            count = 0
+            for obj in self.scene["objects"]:
+                centerX = float(obj["pX"])*m
+                centerY = float(obj["pY"])*m
+                centerZ = float(obj["pZ"])*m
+                matName = obj["mat"] if obj["mat"].startswith("G4_") else "G4_"+obj["mat"]
+                mat = man.FindOrBuildMaterial(matName)
+                shape = obj.get("shape", "box")
+                if shape == "box":
+                    half = float(obj["halfSide"])*m
+                    solid = G4Box("obj"+str(count), half, half, half)
+                elif shape == "cylinder":
+                    solid = G4Tubs("obj"+str(count), 0, float(obj["radius"])*m,
+                                   float(obj["halfHeight"])*m, 0, 360.0*deg)
+                else:
+                    raise ValueError("unsupported object shape: "+str(shape))
+                logVol = G4LogicalVolume(solid, mat, "objLog"+str(count))
+                G4PVPlacement(None,
+                              G4ThreeVector(centerX, centerY, centerZ),
+                              logVol,
+                              "objPhys"+str(count),
+                              logicWorld,
+                              False,
+                              0,
+                              checkOverlaps)
+                count += 1
+        elif self.useCubeFile:
             with open(self.cubeFileName, "r") as cubeInfo:
                 reader = csv.reader(cubeInfo)
                 next(reader) # Skip the first line, it's just column titles
@@ -322,7 +362,8 @@ class DetectorConstruction(G4VUserDetectorConstruction):
 
     
     def ConstructSDandField(self):
-        muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector", 0.8*m, 0*m, 0, False)
+        muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector",
+                                            self.topZ*m, self.bottomZ*m, 0, False)
         if self.detLog != None:
             self.detLog.SetSensitiveDetector(muonSensDet)
         
@@ -331,10 +372,12 @@ class FileManager:
     
     fileManInstance = None
     fptree = None
+    resolved_scene = None
     
     def __init__(self):
         FileManager.fileManInstance = None
         FileManager.fptree = None
+        FileManager.resolved_scene = None
 
     def GetFileManager():
         if FileManager.fileManInstance is None:
@@ -344,6 +387,42 @@ class FileManager:
         
     def ReadIniFile(self,filename):
         FileManager.fptree.read(filename)
+
+    def LoadFromScene(self, scene):
+        FileManager.fptree = configparser.ConfigParser()
+        FileManager.resolved_scene = copy.deepcopy(scene)
+        run = scene.get("run", {})
+        source = scene.get("source", {})
+        output = scene.get("output", {})
+        geom = source.get("geometry", "halfSphere")
+        geom_num = 2 if geom == "halfSphere" else 1
+        FileManager.fptree.add_section("input")
+        FileManager.fptree.set("input", "method", str(run.get("method", 2)))
+        FileManager.fptree.add_section("ecomug")
+        FileManager.fptree.set("ecomug", "geometry", str(geom_num))
+        FileManager.fptree.set("ecomug", "centerX", str(source["centerX"]))
+        FileManager.fptree.set("ecomug", "centerY", str(source["centerY"]))
+        FileManager.fptree.set("ecomug", "centerZ", str(source["centerZ"]))
+        FileManager.fptree.add_section("halfSphere")
+        FileManager.fptree.set("halfSphere", "radius", str(source.get("radius", 0.06)))
+        FileManager.fptree.add_section("sky")
+        FileManager.fptree.set("sky", "sizeX", str(source.get("skySizeX", 1)))
+        FileManager.fptree.set("sky", "sizeY", str(source.get("skySizeY", 1)))
+        FileManager.fptree.add_section("output")
+        FileManager.fptree.set("output", "pathname", output["pathname"])
+        FileManager.fptree.set("output", "foldername", output["foldername"])
+
+    def GetResolvedScene(self):
+        return FileManager.resolved_scene
+
+    def WriteResolvedScene(self, filename="scene.resolved.json"):
+        scene = copy.deepcopy(FileManager.resolved_scene)
+        path = FileManager.fptree.get("output", "pathname")
+        name = FileManager.fptree.get("output", "foldername")
+        pathname = path + name
+        with open(pathname + "/" + filename, "w") as out:
+            json.dump(scene, out, indent=2)
+            out.write("\n")
         
     def CreateResultsDir(self):
         name = FileManager.fptree.get("output","foldername")
@@ -538,20 +617,27 @@ class DetectorHitTrajectory:
 
         
 def main():
+    parser = argparse.ArgumentParser(description="Muon bunker Geant4 simulation")
+    parser.add_argument("--config", default="scene.json",
+                        help="Path to scene.json (default: scene.json)")
+    parser.add_argument("mac", nargs="?", default="simpleRun.mac",
+                        help="Geant4 macro file (default: simpleRun.mac)")
+    args = parser.parse_args()
+
     start = datetime.datetime.now()
     # Can test with a set seed
     random.seed(1234)
 
     fileman = FileManager.GetFileManager()
-    fileman.ReadIniFile("inputMuons.ini")
+    scene = load_scene(args.config)
+    fileman.LoadFromScene(scene)
     fileman.CreateResultsDir()
 
     runManager = G4RunManagerFactory.CreateRunManager(G4RunManagerType.Default)
 
-    macFileName = sys.argv[1]
-    # cubesFileName = sys.argv[2]
+    macFileName = args.mac
         
-    det = DetectorConstruction(useCubeFile=True)
+    det = DetectorConstruction(scene=scene)
     runManager.SetUserInitialization(det)
 
     physicsList = QBBC()
@@ -574,6 +660,13 @@ def main():
     fileman.AddValuePropTree("output","duration", str(duration))
     fileman.AddValuePropTree("input","seed", "1234")
     fileman.WriteIniFile("parameters.ini")
+    resolved = fileman.GetResolvedScene()
+    if resolved is not None:
+        resolved.setdefault("run", {})["duration_minutes"] = duration
+        resolved["run"]["seed"] = 1234
+        resolved["run"]["nparticles"] = int(
+            fileman.GetPropTree().get("input", "nparticles", fallback="0"))
+        fileman.WriteResolvedScene()
 
 
 if __name__ == '__main__':
