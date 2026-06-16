@@ -51,6 +51,9 @@ def _validate_scene(scene):
     scene.setdefault("detector", {})
     scene.setdefault("source", {})
     scene.setdefault("run", {})
+    run = scene["run"]
+    run.setdefault("reportTargetTraversal", True)
+    run.setdefault("gatePoCAOnTargetTraversal", False)
 
 
 def apply_auto_align(scene):

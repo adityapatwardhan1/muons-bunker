@@ -51,6 +51,8 @@ class DetectorConstruction(G4VUserDetectorConstruction):
             self.detSide = 1.0
             self.topZ = 0.8
             self.bottomZ = 0.0
+        self.target_log_vols = []
+        self.traversal_state = TraversalState()
         
     def Construct(self):
         man = G4NistManager.Instance()
@@ -285,6 +287,7 @@ class DetectorConstruction(G4VUserDetectorConstruction):
                               False,
                               0,
                               checkOverlaps)
+                self.target_log_vols.append(logVol)
                 count += 1
         elif self.useCubeFile:
             with open(self.cubeFileName, "r") as cubeInfo:
@@ -362,10 +365,17 @@ class DetectorConstruction(G4VUserDetectorConstruction):
 
     
     def ConstructSDandField(self):
+        run = self.scene.get("run", {}) if self.scene else {}
+        gate_on_traversal = run.get("gatePoCAOnTargetTraversal", False)
         muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector",
-                                            self.topZ*m, self.bottomZ*m, 0, False)
+                                            self.topZ*m, self.bottomZ*m, 0, False,
+                                            self.traversal_state, gate_on_traversal)
         if self.detLog != None:
             self.detLog.SetSensitiveDetector(muonSensDet)
+        if self.target_log_vols:
+            targetSensDet = TargetTraversalSD("TargetTraversalSD", self.traversal_state)
+            for logVol in self.target_log_vols:
+                logVol.SetSensitiveDetector(targetSensDet)
         
             
 class FileManager:
@@ -555,10 +565,41 @@ class RunAction(G4UserRunAction):
         man.Write()
         man.CloseFile()
         print("\n-----End of Run-----")
+        resolved = FileManager.GetFileManager().GetResolvedScene()
+        if resolved and resolved.get("run", {}).get("reportTargetTraversal", True):
+            state = detConstruction.traversal_state
+            n_plate = len(state.plate_crossing_events)
+            n_target = len(state.traversed_events)
+            pct = (100.0 * n_target / n_plate) if n_plate else 0.0
+            print(f"Target traversal: {n_target}/{n_plate} ({pct:.2f}%)")
+            if n_target == 0:
+                print("WARNING: zero target traversals — poor overlap/voxel metrics may "
+                      "reflect unreachable geometry (misaligned source, target outside "
+                      "illuminated cone, etc.), not necessarily broken PoCA.")
         
         
+class TraversalState:
+    def __init__(self):
+        self.plate_crossing_events = set()
+        self.traversed_events = set()
+
+
+class TargetTraversalSD(G4VSensitiveDetector):
+    def __init__(self, SDname, traversal_state):
+        super().__init__(SDname)
+        self.traversal_state = traversal_state
+
+    def ProcessHits(self, step, ROhist):
+        pName = step.GetTrack().GetDefinition().GetParticleName()
+        if pName[0:2] == "mu":
+            evt = G4RunManager.GetRunManager().GetCurrentEvent().GetEventID()
+            self.traversal_state.traversed_events.add(evt)
+        return True
+
+
 class MuonSensitiveDetector(G4VSensitiveDetector):
-    def __init__(self, SDname, topZ, bottomZ, detectorNo, noise=False):
+    def __init__(self, SDname, topZ, bottomZ, detectorNo, noise=False,
+                 traversal_state=None, gate_on_traversal=False):
         super().__init__(SDname)
         self.eventIDtoFirstHitInfo = dict() # Store position+motion vector to calculate PoCA
         self.height = topZ - bottomZ
@@ -566,6 +607,8 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
         self.topZ = topZ
         self.bottomZ = bottomZ
         self.addNoise = noise
+        self.traversal_state = traversal_state
+        self.gate_on_traversal = gate_on_traversal
 
     def ProcessHits(self,step, ROhist):
         pName = step.GetTrack().GetDefinition().GetParticleName()
@@ -582,6 +625,8 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
                 self.eventIDtoFirstHitInfo[evt] = DetectorHitTrajectory(posPreTuple, dirTuple)
             # Exiting detector (bottom layer)
             elif preCopyNo == 2 and postCopyNo == 3:
+                if self.traversal_state is not None:
+                    self.traversal_state.plate_crossing_events.add(evt)
                 # Find the same muon's information when entering the detector
                 if evt in self.eventIDtoFirstHitInfo.keys():
                     posPostVec = step.GetPostStepPoint().GetPosition()
@@ -601,6 +646,9 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
                     margin = self.height / 10
                     if (1.5 < scatteringAngle < 30
                             and self.bottomZ + margin < closestApproach[2] < self.topZ - margin):
+                        if (self.gate_on_traversal
+                                and evt not in self.traversal_state.traversed_events):
+                            return True
                         aMan = G4AnalysisManager.Instance()
                         aMan.FillNtupleIColumn(0, self.detectorNo)
                         aMan.FillNtupleDColumn(1, closestApproach[0])
@@ -665,10 +713,17 @@ def main():
     fileman.WriteIniFile("parameters.ini")
     resolved = fileman.GetResolvedScene()
     if resolved is not None:
-        resolved.setdefault("run", {})["duration_minutes"] = duration
-        resolved["run"]["seed"] = 1234
-        resolved["run"]["nparticles"] = int(
+        run_out = resolved.setdefault("run", {})
+        run_out["duration_minutes"] = duration
+        run_out["seed"] = 1234
+        run_out["nparticles"] = int(
             fileman.GetPropTree().get("input", "nparticles", fallback="0"))
+        state = det.traversal_state
+        n_plate = len(state.plate_crossing_events)
+        n_target = len(state.traversed_events)
+        run_out["plate_crossings"] = n_plate
+        run_out["target_traversals"] = n_target
+        run_out["traversal_fraction"] = (n_target / n_plate) if n_plate else 0.0
         fileman.WriteResolvedScene()
 
 

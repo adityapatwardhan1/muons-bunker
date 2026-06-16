@@ -1,5 +1,9 @@
 {
-  "run": { "method": 2 },
+  "run": {
+    "method": 2,
+    "reportTargetTraversal": true,
+    "gatePoCAOnTargetTraversal": false
+  },
   "detector": {
     "side": 1.0,
     "topZ": 0.8,
