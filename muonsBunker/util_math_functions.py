@@ -6,7 +6,14 @@ import numpy as np
 # each trajectory is represented by a point p on it, and a direction
 # vector d
 def POCA(p1, d1, p2, d2):
-    
+
+    EPS = 1e-12
+    d1a = np.array(d1, dtype=float)
+    d2a = np.array(d2, dtype=float)
+    cross = np.cross(d1a, d2a)
+    if np.linalg.norm(cross) <= EPS * np.linalg.norm(d1a) * np.linalg.norm(d2a):
+        return tuple(0.5 * (p1[i] + p2[i]) for i in range(3))
+
     # these parametric equations represent the lines
     first_parametric = ((d1[0], p1[0]), (d1[1], p1[1]), (d1[2], p1[2]))
     second_parametric = ((d2[0], p2[0]), (d2[1], p2[1]), (d2[2], p2[2]))
@@ -55,6 +62,7 @@ def subtract(v1, v2):
     return tuple(np.array(v1) - np.array(v2))
 
 def test():
+    print(POCA((0, 0, 0), (0, 0, 1), (10, 0, 0), (0, 0, 1)))
     print(POCA((1,1,1),(-1,1,1),(1,1,1),(1,1,1)))
     print(subtract((0,0,0),(-3,-5,2)))
     print(angleBetween((1,1,1),(-1,-1,-1)))
