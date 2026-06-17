@@ -1,31 +1,14 @@
-from voxelize_data import voxelize
+"""Append cube overlap percentages; uses canonical :func:`voxelize_data.percent_voxels_matching`."""
+from voxelize_data import percent_voxels_matching
 import sys
 import csv
 from geant4_pybind import *
 
-# Percent of voxels matching between both the actual and the image out of all voxels in both the actual and image combined
-# Only works if there is one cube
-def percent_voxels_matching(filename, mu_tot, voxel_size, min_x, max_x, min_y, max_y, min_z, max_z):
-    correct_num_voxels = round((max_x - min_x) / voxel_size) * round((max_y - min_y) / voxel_size) * round((max_z - min_z) / voxel_size) # Should it be round or ceil or floor, need voxel side length that is factor of cube side length
-    all_voxels_with_object = voxelize(filename, mu_tot, voxel_size)[0]
-    counted_voxels_in_bounds = 0
-    counted_voxels_outside_bounds = 0
-    for key in all_voxels_with_object.keys():
-        if min_x-voxel_size//2 <= key[0] <= max_x+voxel_size//2 and min_y-voxel_size//2 <= key[1] <= max_y+voxel_size//2 and min_z-voxel_size//2 <= key[2] <= max_z+voxel_size//2:
-            counted_voxels_in_bounds += 1
-        else:
-            counted_voxels_outside_bounds += 1
-    # Overlap of correct and simulated set * 2 / union of all voxels correct and incorrect, as %
-    # Weird metric but it is necessary to account for externally accidentally counted voxels
-    return 100 * (2 * counted_voxels_in_bounds) / (correct_num_voxels + counted_voxels_in_bounds + counted_voxels_outside_bounds)
-
-
-# Write analysis to CSV
-# Only works with one cube
 def output_voxel_match_percentages_to_csv(orig_filename, mu_tot, voxel_size, cube_info_filename, add_column_titles):
+    """Write overlap rows for one voxel size to ``CubeHitPercentages.csv``."""
     rows_to_write = []
-    filename = orig_filename.replace("_","")
-    filename = filename[0:(len(filename)-len("ntHits.csv"))]+"CubeHitPercentages.csv"
+    base = orig_filename[:-len("_nt_Hits.csv")] if orig_filename.endswith("_nt_Hits.csv") else orig_filename
+    filename = base + "CubeHitPercentages.csv"
     with open(cube_info_filename, "r") as cube_info:
         reader = csv.reader(cube_info)
         next(reader)

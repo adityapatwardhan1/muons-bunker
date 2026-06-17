@@ -31,5 +31,10 @@
   "output": {
     "pathname": "../results/",
     "foldername": "testFolder"
+  },
+  "analysis": {
+    "voxelFilter": {
+      "nFloor": 3
+    }
   }
 }

@@ -3,6 +3,7 @@
 
 import copy
 import json
+import os
 
 AUTO_ALIGN_Z_MARGIN = 0.2  # m above detector topZ (matches legacy centerZ=1.0 at topZ=0.8)
 
@@ -82,3 +83,55 @@ def load_scene(path):
     with open(path, "r") as f:
         scene = json.load(f)
     return resolve_scene(scene)
+
+
+def resolve_scene_path(hits_csv_path):
+    """Locate scene JSON for analysis beside a hits file.
+
+    Search order: ``scene.resolved.json`` in the hits directory (written by
+    simulation), then ``scene.json`` there, then package ``scene.json``.
+
+    :param hits_csv_path: Path to ``*_nt_Hits.csv``.
+    :returns: Absolute path, or ``None`` if no file is found.
+    """
+    d = os.path.dirname(os.path.abspath(hits_csv_path))
+    for name in ("scene.resolved.json", "scene.json"):
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene.json")
+    return p if os.path.isfile(p) else None
+
+
+def get_voxel_filter_config(scene):
+    """Merge ``analysis.voxelFilter`` from scene over default filter parameters.
+
+    Defaults: ``nFloor=5``, ``deltaThetaDeg=1.0``, ``poissonZ=2.0``,
+    ``usePoissonExcess=True``, ``sRefMm=10.0``. Override via ``scene.json``::
+
+        "analysis": { "voxelFilter": { "nFloor": 3 } }
+    """
+    cfg = {"nFloor": 5, "deltaThetaDeg": 1.0, "poissonZ": 2.0, "usePoissonExcess": True, "sRefMm": 10.0}
+    cfg.update(scene.get("analysis", {}).get("voxelFilter", {}))
+    return cfg
+
+
+def box_bounds_mm(obj):
+    """Axis-aligned box bounds for a scene ``objects[]`` entry.
+
+    :param obj: Box object with ``pX``, ``pY``, ``pZ``, ``halfSide`` in metres.
+    :returns: ``(min_x, max_x, min_y, max_y, min_z, max_z)`` in mm.
+    """
+    cx, cy, cz = float(obj["pX"]) * 1e3, float(obj["pY"]) * 1e3, float(obj["pZ"]) * 1e3
+    h = float(obj["halfSide"]) * 1e3
+    return (cx - h, cx + h, cy - h, cy + h, cz - h, cz + h)
+
+
+def detector_bounds_mm(scene):
+    """Detector ROI as an axis-aligned box in mm.
+
+    ``detector.side`` is the G4Box *half*-extent in metres (see ``simulation.py``).
+    """
+    det = scene.get("detector", {})
+    h = float(det.get("side", 1.0)) * 1e3
+    return (-h, h, -h, h, float(det.get("bottomZ", 0)) * 1e3, float(det.get("topZ", 0.8)) * 1e3)

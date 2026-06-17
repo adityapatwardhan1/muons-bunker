@@ -1,11 +1,18 @@
+"""Write filtered voxel medians to CSV."""
 from voxelize_data import voxelize
 import sys
 import csv
 
 def output_voxels_to_csv(orig_filename, mu_tot, voxel_size):
-    # Write output to voxelized CSV
-    filename = orig_filename.replace("_","")
-    filename = orig_filename[0:(len(filename)-len("ntHits.csv"))]+"VoxelsResolution"+str(voxel_size)+"mm.csv"
+    """Voxelize hits and write ``{run}VoxelsResolution{N}mm.csv``.
+
+    :param orig_filename: Simulation ``*_nt_Hits.csv`` path.
+    :param mu_tot: Beam-on count passed through to :func:`voxelize`.
+    :param voxel_size: Voxel edge length in mm.
+    """
+    # Strip ``_nt_Hits.csv`` suffix (legacy code used wrong suffix ``ntHits.csv``)
+    base = orig_filename[:-len("_nt_Hits.csv")] if orig_filename.endswith("_nt_Hits.csv") else orig_filename
+    filename = base + "VoxelsResolution" + str(voxel_size) + "mm.csv"
     coordinate_to_median, headers = voxelize(orig_filename, mu_tot, voxel_size)
     with open(filename, "w") as voxelized_csv:
         writer = csv.writer(voxelized_csv)
