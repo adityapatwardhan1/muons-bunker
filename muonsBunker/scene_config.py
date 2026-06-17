@@ -104,16 +104,53 @@ def resolve_scene_path(hits_csv_path):
 
 
 def get_voxel_filter_config(scene):
-    """Merge ``analysis.voxelFilter`` from scene over default filter parameters.
+    """Merge ``analysis.voxelFilter`` from *scene* over code defaults.
 
-    Defaults: ``nFloor=5``, ``deltaThetaDeg=1.0``, ``poissonZ=2.0``,
-    ``usePoissonExcess=True``, ``sRefMm=10.0``. Override via ``scene.json``::
-
-        "analysis": { "voxelFilter": { "nFloor": 3 } }
+    Prefer :func:`load_scene_for_analysis` so resolved run files inherit missing
+    keys from package ``scene.json``. Code defaults: ``nFloor=5``,
+    ``deltaThetaDeg=1.0``, ``poissonZ=2.0``, ``usePoissonExcess=True``,
+    ``sRefMm=10.0``.
     """
     cfg = {"nFloor": 5, "deltaThetaDeg": 1.0, "poissonZ": 2.0, "usePoissonExcess": True, "sRefMm": 10.0}
     cfg.update(scene.get("analysis", {}).get("voxelFilter", {}))
     return cfg
+
+
+def _package_scene_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene.json")
+
+
+def load_scene_for_analysis(hits_csv_path):
+    """Load scene JSON for analysis scripts and voxel filtering.
+
+    Run geometry (detector, objects, traversal stats) comes from
+    ``scene.resolved.json`` beside the hits file when present. Any
+    ``analysis.voxelFilter`` keys absent there are filled from package
+    ``scene.json`` so older resolved files without an ``analysis`` section
+    still pick up project defaults (e.g. ``nFloor``).
+
+    Traversal stats under ``run`` (plate crossings, target traversals) come from
+    the resolved file only; they record simulation geometry acceptance, not
+    analysis filter settings.
+
+    :param hits_csv_path: Path to ``*_nt_Hits.csv``.
+    :returns: Merged scene dict (possibly empty if no JSON is found).
+    """
+    path = resolve_scene_path(hits_csv_path)
+    scene = {}
+    if path:
+        with open(path) as f:
+            scene = json.load(f)
+    pkg_path = _package_scene_path()
+    if os.path.isfile(pkg_path):
+        with open(pkg_path) as f:
+            pkg_vf = json.load(f).get("analysis", {}).get("voxelFilter", {})
+        if pkg_vf:
+            merged_vf = scene.setdefault("analysis", {}).setdefault("voxelFilter", {})
+            for key, val in pkg_vf.items():
+                if key not in merged_vf:
+                    merged_vf[key] = val
+    return scene
 
 
 def box_bounds_mm(obj):

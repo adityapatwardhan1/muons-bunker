@@ -4,11 +4,15 @@ Bins simulation hits into voxels, applies a stability floor plus Poisson
 excess test against a background shell, and exposes overlap/angle metrics.
 """
 import csv
-import json
 import math
 import sys
 
-from scene_config import box_bounds_mm, detector_bounds_mm, get_voxel_filter_config, resolve_scene_path
+from scene_config import (
+    box_bounds_mm,
+    detector_bounds_mm,
+    get_voxel_filter_config,
+    load_scene_for_analysis,
+)
 
 def voxelize(filename, mu_tot, voxel_size=10):
     """Bin hits CSV into voxels and return median scattering angle per kept voxel.
@@ -48,8 +52,7 @@ def voxelize(filename, mu_tot, voxel_size=10):
                 headers.append(row)
     # Estimate background rate r_ref from shell voxels in this run
     coordinate_to_median = dict()
-    scene_path = resolve_scene_path(filename)
-    scene = json.load(open(scene_path)) if scene_path else {}
+    scene = load_scene_for_analysis(filename)
     vf = get_voxel_filter_config(scene)
     half = voxel_size // 2
     v_v, v_ref = float(voxel_size) ** 3, float(vf["sRefMm"]) ** 3
@@ -110,11 +113,10 @@ def get_avg_scattering_angle_among_voxels(orig_filename, mu_tot, voxel_size):
     all_voxels = voxelize(orig_filename, mu_tot, voxel_size)[0]
     if len(all_voxels) == 0:
         return -1
-    scene_path = resolve_scene_path(orig_filename)
-    if scene_path:
-        scene = json.load(open(scene_path))
-        half = voxel_size // 2
-        obj_bounds = [box_bounds_mm(o) for o in scene.get("objects", []) if o.get("shape", "box") == "box"]
+    scene = load_scene_for_analysis(orig_filename)
+    half = voxel_size // 2
+    obj_bounds = [box_bounds_mm(o) for o in scene.get("objects", []) if o.get("shape", "box") == "box"]
+    if obj_bounds:
         roi = [all_voxels[k] for k in all_voxels if any(_voxel_in_roi(k, b, half) for b in obj_bounds)]
         if roi:
             return sum(roi) / len(roi)

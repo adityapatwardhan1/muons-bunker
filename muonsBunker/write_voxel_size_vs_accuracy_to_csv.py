@@ -1,8 +1,7 @@
 """Voxel overlap percent vs resolution; bounds from scene JSON."""
 from voxelize_data import percent_voxels_matching
-from scene_config import box_bounds_mm, resolve_scene_path
+from scene_config import box_bounds_mm, load_scene_for_analysis
 import csv
-import json
 import sys
 
 if __name__ == '__main__':
@@ -15,10 +14,9 @@ if __name__ == '__main__':
         out_filename = base + "CubeHitPercentages.csv"
         rows_to_write = []
 
-        scene_path = resolve_scene_path(raw_data_filename)
-        if scene_path:
-            # Ground-truth boxes from the same scene the simulation used.
-            scene = json.load(open(scene_path))
+        scene = load_scene_for_analysis(raw_data_filename)
+        if scene.get("objects"):
+            # Ground-truth boxes from the run's resolved scene (geometry from simulation).
             for obj in scene.get("objects", []):
                 if obj.get("shape", "box") != "box":
                     continue  # overlap helper is box-only for now
