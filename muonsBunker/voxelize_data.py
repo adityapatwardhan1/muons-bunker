@@ -12,6 +12,8 @@ from scene_config import (
     detector_bounds_mm,
     get_voxel_filter_config,
     load_scene_for_analysis,
+    object_aabb_mm,
+    voxel_in_object,
 )
 
 def voxelize(filename, mu_tot, voxel_size=10):
@@ -156,20 +158,64 @@ def median(sorted_list):
         return sorted_list[len(sorted_list)//2]
     return 0.5*(sorted_list[len(sorted_list)//2] + sorted_list[len(sorted_list)//2 - 1])    
 
-def percent_voxels_matching(filename, mu_tot, voxel_size, min_x, max_x, min_y, max_y, min_z, max_z):
-    """Overlap score between filtered voxels and a ground-truth box (percent).
+def _lattice_centers_along_axis(min_val, max_val, voxel_size):
+    """Voxel centre coordinates along one axis (mm), aligned with :func:`convert_to_voxel_coordinate`."""
+    half = voxel_size // 2
+    k_min = math.ceil((min_val - half) / voxel_size)
+    k_max = math.floor((max_val - half) / voxel_size)
+    for k in range(k_min, k_max + 1):
+        yield k * voxel_size + half
 
-    Only works reliably for a single cube. Bounds are in mm (same frame as voxel keys).
+
+def count_gt_lattice_voxels(obj, voxel_size):
+    """Ground-truth voxel count: lattice centres inside *obj* (mm grid)."""
+    half = voxel_size // 2
+    min_x, max_x, min_y, max_y, min_z, max_z = object_aabb_mm(obj)
+    count = 0
+    for x in _lattice_centers_along_axis(min_x, max_x, voxel_size):
+        for y in _lattice_centers_along_axis(min_y, max_y, voxel_size):
+            for z in _lattice_centers_along_axis(min_z, max_z, voxel_size):
+                if voxel_in_object((x, y, z), obj, half):
+                    count += 1
+    return count
+
+
+def percent_voxels_matching_object(filename, mu_tot, voxel_size, obj):
+    """Dice-Sørensen coefficient (DSC) between filtered PoCA voxels and GT shape, as percent.
+
+    ``100 * 2|P∩G| / (|P|+|G|)`` where *P* is the Fix #5 filtered voxel set and *G* is the
+    ground-truth lattice mask for *obj* (box or cylinder, centre-in-shape on the mm grid).
     """
-    correct_num_voxels = round((max_x - min_x) / voxel_size) * round((max_y - min_y) / voxel_size) * round((max_z - min_z) / voxel_size) # Should it be round or ceil or floor, need voxel side length that is factor of cube side length
+    half = voxel_size // 2
+    shape = obj.get("shape", "box")
+    if shape not in ("box", "cylinder"):
+        raise ValueError(f"unsupported object shape: {shape!r}")
+
+    correct_num_voxels = count_gt_lattice_voxels(obj, voxel_size)
+    in_gt = lambda center: voxel_in_object(center, obj, half)
+
     all_voxels_with_object = voxelize(filename, mu_tot, voxel_size)[0]
     counted_voxels_in_bounds = 0
     counted_voxels_outside_bounds = 0
     for key in all_voxels_with_object.keys():
-        if min_x-voxel_size//2 <= key[0] <= max_x+voxel_size//2 and min_y-voxel_size//2 <= key[1] <= max_y+voxel_size//2 and min_z-voxel_size//2 <= key[2] <= max_z+voxel_size//2:
+        if in_gt(key):
             counted_voxels_in_bounds += 1
         else:
             counted_voxels_outside_bounds += 1
-    # Overlap of correct and simulated set * 2 / union of all voxels correct and incorrect, as %
-    # Weird metric but it is necessary to account for externally accidentally counted voxels
-    return 100 * (2 * counted_voxels_in_bounds) / (correct_num_voxels + counted_voxels_in_bounds + counted_voxels_outside_bounds)       
+    return (100 * (2 * counted_voxels_in_bounds)
+            / (correct_num_voxels + counted_voxels_in_bounds + counted_voxels_outside_bounds))
+
+
+def percent_voxels_matching(filename, mu_tot, voxel_size, min_x, max_x, min_y, max_y, min_z, max_z):
+    """Backward-compatible box wrapper around :func:`percent_voxels_matching_object`."""
+    cx = 0.5 * (min_x + max_x)
+    cy = 0.5 * (min_y + max_y)
+    cz = 0.5 * (min_z + max_z)
+    obj = {
+        "shape": "box",
+        "pX": cx / 1e3,
+        "pY": cy / 1e3,
+        "pZ": cz / 1e3,
+        "halfSide": 0.5 * (max_x - min_x) / 1e3,
+    }
+    return percent_voxels_matching_object(filename, mu_tot, voxel_size, obj)

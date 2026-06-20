@@ -153,15 +153,54 @@ def load_scene_for_analysis(hits_csv_path):
     return scene
 
 
+def object_center_mm(obj):
+    """Object centre ``(x, y, z)`` in mm from scene ``objects[]`` position fields."""
+    return (
+        float(obj["pX"]) * 1e3,
+        float(obj["pY"]) * 1e3,
+        float(obj["pZ"]) * 1e3,
+    )
+
+
 def box_bounds_mm(obj):
     """Axis-aligned box bounds for a scene ``objects[]`` entry.
 
     :param obj: Box object with ``pX``, ``pY``, ``pZ``, ``halfSide`` in metres.
     :returns: ``(min_x, max_x, min_y, max_y, min_z, max_z)`` in mm.
     """
-    cx, cy, cz = float(obj["pX"]) * 1e3, float(obj["pY"]) * 1e3, float(obj["pZ"]) * 1e3
+    cx, cy, cz = object_center_mm(obj)
     h = float(obj["halfSide"]) * 1e3
     return (cx - h, cx + h, cy - h, cy + h, cz - h, cz + h)
+
+
+def object_aabb_mm(obj):
+    """Axis-aligned bounding box in mm for lattice sweeps (box or cylinder)."""
+    shape = obj.get("shape", "box")
+    if shape == "box":
+        return box_bounds_mm(obj)
+    if shape == "cylinder":
+        cx, cy, cz = object_center_mm(obj)
+        r = float(obj["radius"]) * 1e3
+        hh = float(obj["halfHeight"]) * 1e3
+        return (cx - r, cx + r, cy - r, cy + r, cz - hh, cz + hh)
+    raise ValueError(f"unsupported object shape: {shape!r}")
+
+
+def voxel_in_object(center, obj, half_voxel):
+    """True if voxel centre (mm) lies inside *obj* with half-voxel slack."""
+    shape = obj.get("shape", "box")
+    if shape == "box":
+        bounds = box_bounds_mm(obj)
+        return (bounds[0] - half_voxel <= center[0] <= bounds[1] + half_voxel
+                and bounds[2] - half_voxel <= center[1] <= bounds[3] + half_voxel
+                and bounds[4] - half_voxel <= center[2] <= bounds[5] + half_voxel)
+    if shape == "cylinder":
+        cx, cy, cz = object_center_mm(obj)
+        r = float(obj["radius"]) * 1e3 + half_voxel
+        hh = float(obj["halfHeight"]) * 1e3 + half_voxel
+        dx, dy, dz = center[0] - cx, center[1] - cy, center[2] - cz
+        return dx * dx + dy * dy <= r * r and abs(dz) <= hh
+    raise ValueError(f"unsupported object shape: {shape!r}")
 
 
 def detector_bounds_mm(scene):

@@ -1,6 +1,6 @@
 """Voxel overlap percent vs resolution; bounds from scene JSON."""
-from voxelize_data import percent_voxels_matching
-from scene_config import box_bounds_mm, load_scene_for_analysis
+from voxelize_data import percent_voxels_matching, percent_voxels_matching_object
+from scene_config import load_scene_for_analysis
 import csv
 import sys
 
@@ -16,24 +16,35 @@ if __name__ == '__main__':
 
         scene = load_scene_for_analysis(raw_data_filename)
         if scene.get("objects"):
-            # Ground-truth boxes from the run's resolved scene (geometry from simulation).
             for obj in scene.get("objects", []):
-                if obj.get("shape", "box") != "box":
-                    continue  # overlap helper is box-only for now
+                shape = obj.get("shape", "box")
+                row = [
+                    obj.get("name", ""),
+                    shape,
+                    obj["pX"],
+                    obj["pY"],
+                    obj["pZ"],
+                    obj.get("halfSide", ""),
+                    obj.get("radius", ""),
+                    obj.get("halfHeight", ""),
+                    obj.get("mat", ""),
+                ]
 
-                # Scene positions are metres; overlap / voxel keys are mm.
-                min_x, max_x, min_y, max_y, min_z, max_z = box_bounds_mm(obj)
-                sL = float(obj["halfSide"]) * 1000.0  # half-side mm; full cube edge = 2*sL
-                row = [obj["pX"], obj["pY"], obj["pZ"], obj["halfSide"], obj.get("mat", "")]
+                if shape == "box":
+                    sL = float(obj["halfSide"]) * 1000.0
+                    sweep_mm = int(2 * sL)
+                elif shape == "cylinder":
+                    sweep_mm = int(2 * float(obj["radius"]) * 1000.0)
+                else:
+                    continue
 
-                # Try every voxel size that tiles the cube face evenly (divisor of 2*sL).
-                for voxel_size in range(1, int(2 * sL) + 1):
-                    if int(2 * sL) % voxel_size == 0:
+                for voxel_size in range(1, sweep_mm + 1):
+                    if sweep_mm % voxel_size == 0:
                         single_row_to_write = row.copy()
                         single_row_to_write.append(voxel_size)
-                        single_row_to_write.append(percent_voxels_matching(
-                            raw_data_filename, mu_tot, voxel_size,
-                            min_x, max_x, min_y, max_y, min_z, max_z))
+                        single_row_to_write.append(
+                            percent_voxels_matching_object(
+                                raw_data_filename, mu_tot, voxel_size, obj))
                         rows_to_write.append(single_row_to_write)
         else:
             # Legacy path when simulation did not write scene.resolved.json
@@ -45,9 +56,10 @@ if __name__ == '__main__':
                     pY = float(row[1]) * 1000.0
                     pZ = float(row[2]) * 1000.0
                     sL = float(row[3]) * 1000.0
+                    legacy_row = ["", "box", row[0], row[1], row[2], row[3], "", "", row[4] if len(row) > 4 else ""]
                     for voxel_size in range(1, int(2 * sL) + 1):
-                        single_row_to_write = row.copy()
                         if int(2 * sL) % voxel_size == 0:
+                            single_row_to_write = legacy_row.copy()
                             single_row_to_write.append(voxel_size)
                             single_row_to_write.append(percent_voxels_matching(
                                 raw_data_filename, mu_tot, voxel_size,
@@ -56,7 +68,11 @@ if __name__ == '__main__':
         
         with open(out_filename, "w") as output:
             writer = csv.writer(output)
-            writer.writerow(["pX(m)","pY(m)","pZ(m)","sideLengthHalf(m)","mat","voxelSize(mm)","percentDetected"])
+            writer.writerow([
+                "objectName", "shape", "pX(m)", "pY(m)", "pZ(m)",
+                "sideLengthHalf(m)", "radius(m)", "halfHeight(m)", "mat",
+                "voxelSize(mm)", "percentDetected",
+            ])
             for row in rows_to_write:
                 writer.writerow(row)
         print("wrote output to "+out_filename)
