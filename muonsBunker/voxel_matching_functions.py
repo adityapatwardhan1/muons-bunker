@@ -1,14 +1,14 @@
-"""Append cube overlap percentages; uses canonical :func:`voxelize_data.percent_voxels_matching`."""
+"""Append voxel overlap DSC rows; uses canonical :func:`voxelize_data.percent_voxels_matching`."""
 from voxelize_data import percent_voxels_matching
 import sys
 import csv
 from geant4_pybind import *
 
 def output_voxel_match_percentages_to_csv(orig_filename, mu_tot, voxel_size, cube_info_filename, add_column_titles):
-    """Write overlap rows for one voxel size to ``CubeHitPercentages.csv``."""
+    """Write overlap rows for one voxel size to ``VoxelOverlapDSC.csv``."""
     rows_to_write = []
     base = orig_filename[:-len("_nt_Hits.csv")] if orig_filename.endswith("_nt_Hits.csv") else orig_filename
-    filename = base + "CubeHitPercentages.csv"
+    filename = base + "VoxelOverlapDSC.csv"
     with open(cube_info_filename, "r") as cube_info:
         reader = csv.reader(cube_info)
         next(reader)

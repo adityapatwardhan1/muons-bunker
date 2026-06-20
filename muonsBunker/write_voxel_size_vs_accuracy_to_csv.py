@@ -9,9 +9,9 @@ if __name__ == '__main__':
         raw_data_filename = sys.argv[1]
         mu_tot = int(sys.argv[2])
 
-        # Output sits beside hits: resultsFoo_nt_Hits.csv -> resultsFooCubeHitPercentages.csv
+        # Output sits beside hits: resultsFoo_nt_Hits.csv -> resultsFooVoxelOverlapDSC.csv
         base = raw_data_filename[:-len("_nt_Hits.csv")] if raw_data_filename.endswith("_nt_Hits.csv") else raw_data_filename
-        out_filename = base + "CubeHitPercentages.csv"
+        out_filename = base + "VoxelOverlapDSC.csv"
         rows_to_write = []
 
         scene = load_scene_for_analysis(raw_data_filename)
