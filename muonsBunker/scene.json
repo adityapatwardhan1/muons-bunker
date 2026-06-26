@@ -7,7 +7,10 @@
   "detector": {
     "side": 1.0,
     "topZ": 0.8,
-    "bottomZ": 0.0
+    "bottomZ": 0.0,
+    "minScatteringAngleDeg": 1.5,
+    "maxScatteringAngleDeg": 30.0,
+    "pocaZMarginFraction": 0.1
   },
   "source": {
     "geometry": "halfSphere",

@@ -52,6 +52,16 @@ def _validate_scene(scene):
     scene.setdefault("detector", {})
     scene.setdefault("source", {})
     scene.setdefault("run", {})
+    det = scene["detector"]
+    det.setdefault("minScatteringAngleDeg", 1.5)
+    det.setdefault("maxScatteringAngleDeg", 30.0)
+    det.setdefault("pocaZMarginFraction", 0.1)
+    if det["minScatteringAngleDeg"] >= det["maxScatteringAngleDeg"]:
+        raise ValueError(
+            "detector.minScatteringAngleDeg must be < maxScatteringAngleDeg")
+    z_frac = float(det["pocaZMarginFraction"])
+    if not 0.0 <= z_frac < 0.5:
+        raise ValueError("detector.pocaZMarginFraction must be in [0, 0.5)")
     run = scene["run"]
     run.setdefault("reportTargetTraversal", True)
     run.setdefault("gatePoCAOnTargetTraversal", False)

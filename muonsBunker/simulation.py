@@ -367,8 +367,13 @@ class DetectorConstruction(G4VUserDetectorConstruction):
     def ConstructSDandField(self):
         run = self.scene.get("run", {}) if self.scene else {}
         gate_on_traversal = run.get("gatePoCAOnTargetTraversal", False)
+        det = self.scene.get("detector", {}) if self.scene else {}
+        min_angle = float(det.get("minScatteringAngleDeg", 1.5))
+        max_angle = float(det.get("maxScatteringAngleDeg", 30.0))
+        z_margin_frac = float(det.get("pocaZMarginFraction", 0.1))
         muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector",
                                             self.topZ*m, self.bottomZ*m, 0, False,
+                                            min_angle, max_angle, z_margin_frac,
                                             self.traversal_state, gate_on_traversal)
         if self.detLog != None:
             self.detLog.SetSensitiveDetector(muonSensDet)
@@ -599,6 +604,8 @@ class TargetTraversalSD(G4VSensitiveDetector):
 
 class MuonSensitiveDetector(G4VSensitiveDetector):
     def __init__(self, SDname, topZ, bottomZ, detectorNo, noise=False,
+                 min_scattering_angle_deg=1.5, max_scattering_angle_deg=30.0,
+                 poca_z_margin_fraction=0.1,
                  traversal_state=None, gate_on_traversal=False):
         super().__init__(SDname)
         self.eventIDtoFirstHitInfo = dict() # Store position+motion vector to calculate PoCA
@@ -606,6 +613,9 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
         self.detectorNo = detectorNo
         self.topZ = topZ
         self.bottomZ = bottomZ
+        self.min_scattering_angle_deg = min_scattering_angle_deg
+        self.max_scattering_angle_deg = max_scattering_angle_deg
+        self.poca_z_margin_fraction = poca_z_margin_fraction
         self.addNoise = noise
         self.traversal_state = traversal_state
         self.gate_on_traversal = gate_on_traversal
@@ -643,8 +653,8 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
                     approxSecondTrajectory = subtract(posPostTuple, closestApproach)
                     scatteringAngle = angleBetween(approxFirstTrajectory, approxSecondTrajectory)
                     # Remove outliers near top/bottom plates; keep PoCA z inside symmetric band
-                    margin = self.height / 10
-                    if (1.5 < scatteringAngle < 30
+                    margin = self.height * self.poca_z_margin_fraction
+                    if (self.min_scattering_angle_deg < scatteringAngle < self.max_scattering_angle_deg
                             and self.bottomZ + margin < closestApproach[2] < self.topZ - margin):
                         if (self.gate_on_traversal
                                 and evt not in self.traversal_state.traversed_events):
