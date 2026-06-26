@@ -47,10 +47,12 @@ class DetectorConstruction(G4VUserDetectorConstruction):
             self.detSide = float(det.get("side", 1.0))
             self.topZ = float(det.get("topZ", 0.8))
             self.bottomZ = float(det.get("bottomZ", 0.0))
+            self.plateThicknessMm = float(det.get("plateThicknessMm", 2.5))
         else:
             self.detSide = 1.0
             self.topZ = 0.8
             self.bottomZ = 0.0
+            self.plateThicknessMm = 2.5
         self.target_log_vols = []
         self.traversal_state = TraversalState()
         
@@ -222,7 +224,7 @@ class DetectorConstruction(G4VUserDetectorConstruction):
         #----------------------------DETECTOR------------------------------#
         detMaterial = man.FindOrBuildMaterial("G4_PLASTIC_SC_VINYLTOLUENE")
         detSide   = self.detSide*m       
-        detHeight = 2.5*mm      
+        detHeight = self.plateThicknessMm * mm
         detSolid = G4Box("detSolid",detSide, detSide,detHeight)
         self.detLog = G4LogicalVolume(detSolid, detMaterial, "detLog")
 
@@ -371,8 +373,9 @@ class DetectorConstruction(G4VUserDetectorConstruction):
         min_angle = float(det.get("minScatteringAngleDeg", 1.5))
         max_angle = float(det.get("maxScatteringAngleDeg", 30.0))
         z_margin_frac = float(det.get("pocaZMarginFraction", 0.1))
+        add_noise = bool(det.get("addNoise", False))
         muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector",
-                                            self.topZ*m, self.bottomZ*m, 0, False,
+                                            self.topZ*m, self.bottomZ*m, 0, add_noise,
                                             min_angle, max_angle, z_margin_frac,
                                             self.traversal_state, gate_on_traversal)
         if self.detLog != None:
@@ -686,11 +689,11 @@ def main():
     args = parser.parse_args()
 
     start = datetime.datetime.now()
-    # Can test with a set seed
-    random.seed(1234)
 
     fileman = FileManager.GetFileManager()
     scene = load_scene(args.config)
+    run_seed = int(scene.get("run", {}).get("seed", 1234))
+    random.seed(run_seed)
     fileman.LoadFromScene(scene)
     fileman.CreateResultsDir()
 
@@ -719,13 +722,13 @@ def main():
     duration = (stop - start).seconds//60
 
     fileman.AddValuePropTree("output","duration", str(duration))
-    fileman.AddValuePropTree("input","seed", "1234")
+    fileman.AddValuePropTree("input","seed", str(run_seed))
     fileman.WriteIniFile("parameters.ini")
     resolved = fileman.GetResolvedScene()
     if resolved is not None:
         run_out = resolved.setdefault("run", {})
         run_out["duration_minutes"] = duration
-        run_out["seed"] = 1234
+        run_out["seed"] = run_seed
         run_out["nparticles"] = int(
             fileman.GetPropTree().get("input", "nparticles", fallback="0"))
         state = det.traversal_state

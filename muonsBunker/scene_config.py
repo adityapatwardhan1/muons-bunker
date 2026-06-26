@@ -5,8 +5,6 @@ import copy
 import json
 import os
 
-AUTO_ALIGN_Z_MARGIN = 0.2  # m above detector topZ (matches legacy centerZ=1.0 at topZ=0.8)
-
 
 def _horizontal_extent(obj):
     shape = obj.get("shape", "box")
@@ -62,7 +60,14 @@ def _validate_scene(scene):
     z_frac = float(det["pocaZMarginFraction"])
     if not 0.0 <= z_frac < 0.5:
         raise ValueError("detector.pocaZMarginFraction must be in [0, 0.5)")
+    det.setdefault("plateThicknessMm", 2.5)
+    if float(det["plateThicknessMm"]) <= 0:
+        raise ValueError("detector.plateThicknessMm must be > 0")
+    det.setdefault("addNoise", False)
+    source = scene["source"]
+    source.setdefault("autoAlignZMargin", 0.2)
     run = scene["run"]
+    run.setdefault("seed", 1234)
     run.setdefault("reportTargetTraversal", True)
     run.setdefault("gatePoCAOnTargetTraversal", False)
 
@@ -77,7 +82,8 @@ def apply_auto_align(scene):
     source["centerX"] = sum(float(o["pX"]) for o in objects) / len(objects)
     source["centerY"] = sum(float(o["pY"]) for o in objects) / len(objects)
     top_z = float(detector.get("topZ", 0.8))
-    source["centerZ"] = top_z + AUTO_ALIGN_Z_MARGIN
+    z_margin = float(source.get("autoAlignZMargin", 0.2))
+    source["centerZ"] = top_z + z_margin
     source["radius"] = max(_horizontal_extent(o) for o in objects)
     return scene
 

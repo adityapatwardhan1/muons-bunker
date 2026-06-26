@@ -1,6 +1,7 @@
 {
   "run": {
     "method": 2,
+    "seed": 1234,
     "reportTargetTraversal": true,
     "gatePoCAOnTargetTraversal": false
   },
@@ -10,11 +11,14 @@
     "bottomZ": 0.0,
     "minScatteringAngleDeg": 1.5,
     "maxScatteringAngleDeg": 30.0,
-    "pocaZMarginFraction": 0.1
+    "pocaZMarginFraction": 0.1,
+    "plateThicknessMm": 2.5,
+    "addNoise": false
   },
   "source": {
     "geometry": "halfSphere",
     "autoAlign": true,
+    "autoAlignZMargin": 0.2,
     "centerX": 0.0,
     "centerY": 0.0,
     "centerZ": 1.0,
