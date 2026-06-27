@@ -13,7 +13,11 @@
     "maxScatteringAngleDeg": 30.0,
     "pocaZMarginFraction": 0.1,
     "plateThicknessMm": 2.5,
-    "addNoise": false
+    "positionNoise": {
+      "enabled": false,
+      "sigmaMm": 1.0,
+      "sigmaZMm": null
+    }
   },
   "source": {
     "geometry": "halfSphere",

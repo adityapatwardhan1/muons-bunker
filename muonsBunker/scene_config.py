@@ -63,7 +63,14 @@ def _validate_scene(scene):
     det.setdefault("plateThicknessMm", 2.5)
     if float(det["plateThicknessMm"]) <= 0:
         raise ValueError("detector.plateThicknessMm must be > 0")
-    det.setdefault("addNoise", False)
+    pn = det.setdefault("positionNoise", {})
+    pn.setdefault("enabled", False)
+    pn.setdefault("sigmaMm", 1.0)
+    pn.setdefault("sigmaZMm", None)
+    if float(pn["sigmaMm"]) < 0:
+        raise ValueError("detector.positionNoise.sigmaMm must be >= 0")
+    if pn["sigmaZMm"] is not None and float(pn["sigmaZMm"]) < 0:
+        raise ValueError("detector.positionNoise.sigmaZMm must be >= 0 when set")
     source = scene["source"]
     source.setdefault("autoAlignZMargin", 0.2)
     run = scene["run"]
@@ -102,71 +109,47 @@ def load_scene(path):
 
 
 def resolve_scene_path(hits_csv_path):
-    """Locate scene JSON for analysis beside a hits file.
+    """Path to ``scene.resolved.json`` beside a hits file.
 
-    Search order: ``scene.resolved.json`` in the hits directory (written by
-    simulation), then ``scene.json`` there, then package ``scene.json``.
+    Analysis uses only the resolved scene written by simulation at end of run.
 
     :param hits_csv_path: Path to ``*_nt_Hits.csv``.
-    :returns: Absolute path, or ``None`` if no file is found.
+    :returns: Absolute path to ``scene.resolved.json`` in the hits directory.
+    :raises FileNotFoundError: if the resolved scene file is missing.
     """
     d = os.path.dirname(os.path.abspath(hits_csv_path))
-    for name in ("scene.resolved.json", "scene.json"):
-        p = os.path.join(d, name)
-        if os.path.isfile(p):
-            return p
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene.json")
-    return p if os.path.isfile(p) else None
+    p = os.path.join(d, "scene.resolved.json")
+    if not os.path.isfile(p):
+        raise FileNotFoundError(
+            f"analysis requires {p}; run simulation to write scene.resolved.json beside hits CSV"
+        )
+    return p
 
 
 def get_voxel_filter_config(scene):
     """Merge ``analysis.voxelFilter`` from *scene* over code defaults.
 
-    Prefer :func:`load_scene_for_analysis` so resolved run files inherit missing
-    keys from package ``scene.json``. Code defaults: ``nFloor=5``,
-    ``deltaThetaDeg=1.0``, ``poissonZ=2.0``, ``usePoissonExcess=True``,
-    ``sRefMm=10.0``.
+    Code defaults: ``nFloor=5``, ``deltaThetaDeg=1.0``, ``poissonZ=2.0``,
+    ``usePoissonExcess=True``, ``sRefMm=10.0``.
     """
     cfg = {"nFloor": 5, "deltaThetaDeg": 1.0, "poissonZ": 2.0, "usePoissonExcess": True, "sRefMm": 10.0}
     cfg.update(scene.get("analysis", {}).get("voxelFilter", {}))
     return cfg
 
 
-def _package_scene_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "scene.json")
-
-
 def load_scene_for_analysis(hits_csv_path):
-    """Load scene JSON for analysis scripts and voxel filtering.
+    """Load ``scene.resolved.json`` beside a hits CSV for analysis.
 
-    Run geometry (detector, objects, traversal stats) comes from
-    ``scene.resolved.json`` beside the hits file when present. Any
-    ``analysis.voxelFilter`` keys absent there are filled from package
-    ``scene.json`` so older resolved files without an ``analysis`` section
-    still pick up project defaults (e.g. ``nFloor``).
-
-    Traversal stats under ``run`` (plate crossings, target traversals) come from
-    the resolved file only; they record simulation geometry acceptance, not
-    analysis filter settings.
+    Run geometry (detector, objects, traversal stats) and analysis settings
+    come solely from the resolved file written at simulation time.
 
     :param hits_csv_path: Path to ``*_nt_Hits.csv``.
-    :returns: Merged scene dict (possibly empty if no JSON is found).
+    :returns: Resolved scene dict.
+    :raises FileNotFoundError: if ``scene.resolved.json`` is missing.
     """
     path = resolve_scene_path(hits_csv_path)
-    scene = {}
-    if path:
-        with open(path) as f:
-            scene = json.load(f)
-    pkg_path = _package_scene_path()
-    if os.path.isfile(pkg_path):
-        with open(pkg_path) as f:
-            pkg_vf = json.load(f).get("analysis", {}).get("voxelFilter", {})
-        if pkg_vf:
-            merged_vf = scene.setdefault("analysis", {}).setdefault("voxelFilter", {})
-            for key, val in pkg_vf.items():
-                if key not in merged_vf:
-                    merged_vf[key] = val
-    return scene
+    with open(path) as f:
+        return json.load(f)
 
 
 def object_center_mm(obj):

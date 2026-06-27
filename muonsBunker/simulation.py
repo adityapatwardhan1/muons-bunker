@@ -373,9 +373,9 @@ class DetectorConstruction(G4VUserDetectorConstruction):
         min_angle = float(det.get("minScatteringAngleDeg", 1.5))
         max_angle = float(det.get("maxScatteringAngleDeg", 30.0))
         z_margin_frac = float(det.get("pocaZMarginFraction", 0.1))
-        add_noise = bool(det.get("addNoise", False))
+        position_noise = det.get("positionNoise", {})
         muonSensDet = MuonSensitiveDetector("MuonSensitiveDetector",
-                                            self.topZ*m, self.bottomZ*m, 0, add_noise,
+                                            self.topZ*m, self.bottomZ*m, 0, position_noise,
                                             min_angle, max_angle, z_margin_frac,
                                             self.traversal_state, gate_on_traversal)
         if self.detLog != None:
@@ -606,7 +606,7 @@ class TargetTraversalSD(G4VSensitiveDetector):
 
 
 class MuonSensitiveDetector(G4VSensitiveDetector):
-    def __init__(self, SDname, topZ, bottomZ, detectorNo, noise=False,
+    def __init__(self, SDname, topZ, bottomZ, detectorNo, position_noise=None,
                  min_scattering_angle_deg=1.5, max_scattering_angle_deg=30.0,
                  poca_z_margin_fraction=0.1,
                  traversal_state=None, gate_on_traversal=False):
@@ -619,9 +619,23 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
         self.min_scattering_angle_deg = min_scattering_angle_deg
         self.max_scattering_angle_deg = max_scattering_angle_deg
         self.poca_z_margin_fraction = poca_z_margin_fraction
-        self.addNoise = noise
+        pn = position_noise or {}
+        self.position_noise_enabled = bool(pn.get("enabled", False))
+        self.sigma_mm = float(pn.get("sigmaMm", 1.0))
+        sz = pn.get("sigmaZMm")
+        self.sigma_z_mm = float(sz) if sz is not None else None
         self.traversal_state = traversal_state
         self.gate_on_traversal = gate_on_traversal
+
+    def _jitter_position(self, pos):
+        if not self.position_noise_enabled:
+            return pos
+        sz = self.sigma_z_mm if self.sigma_z_mm is not None else self.sigma_mm
+        return (
+            pos[0] + random.gauss(0.0, self.sigma_mm),
+            pos[1] + random.gauss(0.0, self.sigma_mm),
+            pos[2] + random.gauss(0.0, sz),
+        )
 
     def ProcessHits(self,step, ROhist):
         pName = step.GetTrack().GetDefinition().GetParticleName()
@@ -631,9 +645,10 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
             evt = G4RunManager.GetRunManager().GetCurrentEvent().GetEventID()
             # Going through top layer (entering detector)
             if preCopyNo == 0 and postCopyNo == 1:
-                posPreVec = step.GetPreStepPoint().GetPosition() 
-                posPreTuple = (posPreVec.getX(), posPreVec.getY(), posPreVec.getZ())
-                dirVec = step.GetTrack().GetMomentumDirection() 
+                posPreVec = step.GetPreStepPoint().GetPosition()
+                posPreTuple = self._jitter_position(
+                    (posPreVec.getX(), posPreVec.getY(), posPreVec.getZ()))
+                dirVec = step.GetTrack().GetMomentumDirection()
                 dirTuple = (dirVec.getX(), dirVec.getY(), dirVec.getZ())
                 self.eventIDtoFirstHitInfo[evt] = DetectorHitTrajectory(posPreTuple, dirTuple)
             # Exiting detector (bottom layer)
@@ -643,15 +658,14 @@ class MuonSensitiveDetector(G4VSensitiveDetector):
                 # Find the same muon's information when entering the detector
                 if evt in self.eventIDtoFirstHitInfo.keys():
                     posPostVec = step.GetPostStepPoint().GetPosition()
-                    posPostTuple = (posPostVec.getX(), posPostVec.getY(), posPostVec.getZ())
+                    posPostTuple = self._jitter_position(
+                        (posPostVec.getX(), posPostVec.getY(), posPostVec.getZ()))
                     dirVec = step.GetTrack().GetMomentumDirection()
                     dirTuple = (dirVec.getX(), dirVec.getY(), dirVec.getZ())
                     firstHitPosPre = self.eventIDtoFirstHitInfo[evt].posPre # Position of muon when entering detector
                     firstHitDir = self.eventIDtoFirstHitInfo[evt].direction # Direction of muon when entering detector
                     # Get point of closest approach
                     closestApproach = POCA(firstHitPosPre, firstHitDir, posPostTuple, dirTuple)
-                    if self.addNoise:
-                        closestApproach = (closestApproach[0]+random.gauss(0.0,1.0)/10, closestApproach[1]+random.gauss(0.0,1.0)/10, closestApproach[2]+random.gauss(0.0,1.0)/10)        
                     approxFirstTrajectory = subtract(closestApproach, firstHitPosPre)
                     approxSecondTrajectory = subtract(posPostTuple, closestApproach)
                     scatteringAngle = angleBetween(approxFirstTrajectory, approxSecondTrajectory)
